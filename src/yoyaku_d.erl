@@ -13,8 +13,6 @@
 %% API
 -export([start_link/1]).
 
--include_lib("riakc/include/riakc.hrl").
-
 %% gen_fsm callbacks
 -export([init/1, state_name/2, state_name/3, handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
@@ -158,22 +156,14 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-%% handle_info(timeout, idle, State0 = #state{conn=C, stream=Stream}) ->
+handle_info(timeout, idle, State0 = #state{scanner=undefined,
+                                           stream=Stream}) ->
 %%     %% start batching
-%%     Bucket = yoyaku_stream:bucket_name(Stream),
-%%     End = yoyaku:timestamp_key_prefix(),
-%%     IndexQueryOptions = [{max_results, 1024}],
-%%     {ok, IndexResults} = riakc_pb_socket:get_index_range(C,
-%%                                                          Bucket,
-%%                                                          <<"$key">>,
-%%                                                          <<"0">>,
-%%                                                          End,
-%%                                                          IndexQueryOptions),
-%%     ?INDEX_RESULTS{keys=Keys, continuation=Cont} = IndexResults,
-%%     State = State0#state{queue = queue:from_list(Keys),
-%%                          end_key = End,
-%%                          continuation=Cont},
-%%     {next_state, fetching_next_set, State, 0};
+    Scanner0 = yoyaku_scanner:new(Stream),
+    {Keys, Scanner} = yoyaku_scanner:pop_keys(Scanner0),
+    State = State0#state{queue = queue:from_list(Keys),
+                         scanner = Scanner},
+    {next_state, fetching_next_set, State};
 %% handle_info(timeout, fetching_next_set,
 %%             State0 = #state{conn=C, stream=Stream, queue=Q0,
 %%                             end_key = End,

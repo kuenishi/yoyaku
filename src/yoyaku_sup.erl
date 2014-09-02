@@ -37,8 +37,8 @@ init([]) ->
 
 stream_to_childspec(Stream) ->
     Name = yoyaku_stream:name(Stream),
-    {Name, {yoyaku_d, start_link, [Stream]},
-     permanent, 5000, worker, [yoyaku_d]}.
+    {Name, {yoyaku_d_sup, start_link, [Stream]},
+     permanent, 5000, supervisor, [yoyaku_d_sup]}.
 
 check_all_bucket_props(Streams) ->
     {ok, C} = riakc_pb_socket:start_link(localhost, 8087),
