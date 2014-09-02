@@ -10,6 +10,8 @@ yoyaku_startstop_test() ->
     ok = application:start(syntax_tools),
     ok = application:start(goldrush),
     ok = application:start(lager),
+
+    yoyaku_riakc_mock:init(),
     ok = application:start(protobuffs),
     ok = application:start(riak_pb),
     ok = application:start(riakc),

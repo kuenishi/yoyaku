@@ -36,6 +36,18 @@ In `app.config` or whatever application configuration, set
 }
 ```
 
+## Internal
+
+Supervision tree
+
+```
+yoyaku_sup -+- yoyaku_d_sup -+- yoyaku_worker (x N)
+            |                +- yoyaku_d
+            +- yoyaku_d_sup -+- yoyaku_worker (x N)
+            |                +- yoyaku_d
+            +-... (as many as number of streams)
+```
+
 ## TODO (in far future)
 
 - adaptive resource management and scheduling

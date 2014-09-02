@@ -15,7 +15,7 @@
          interval/0]).
 
 init_ets() ->
-    true = ets:new(?MODULE, [public, set]),
+    ?MODULE = ets:new(?MODULE, [public, set, named_table]),
     ok.
 
 get_all_streams() ->
