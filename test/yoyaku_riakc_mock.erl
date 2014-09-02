@@ -16,14 +16,16 @@ init() ->
     catch meck:new(riakc_pb_socket),
     meck:expect(riakc_pb_socket, start_link,
                 fun(_, Port) when is_integer(Port) andalso Port > 0 ->
-                        catch ets:new(?MODULE, [public, ordered_set, named_table]),
+                        case ets:info(?MODULE) of
+                            undefined ->
+                                ets:new(?MODULE, [public, ordered_set, named_table]);
+                            _ ->
+                                ok
+                        end,
                         {ok, self()}
                 end),
     meck:expect(riakc_pb_socket, stop,
-                fun(C) when is_pid(C) ->
-                        true = ets:delete(?MODULE),
-                        ok
-                end),
+                fun(C) when is_pid(C) -> ok end),
     meck:expect(riakc_pb_socket, ping,
                 fun(C) when is_pid(C) -> ok end),
     meck:expect(riakc_pb_socket, get_bucket,
@@ -84,7 +86,7 @@ mock_test() ->
     K = <<"burger">>,
     Data = <<"data">>,
     Obj0 = riakc_obj:new(B, K, Data),
-    
+
     {ok,C} = riakc_pb_socket:start_link(localhost, 8087),
     ok = riakc_pb_socket:put(C, Obj0),
     {ok, Obj0} = riakc_pb_socket:get(C, B, K),

@@ -47,8 +47,8 @@ valid_stream(Stream) ->
         erlang:get_module_info(Module),
         Exports = Module:module_info(exports),
         lists:member({init,1}, Exports)
-            andalso lists:member({handle_invoke, 3})
-            andalso lists:member({terminate, 1})
+            andalso lists:member({handle_invoke, 3}, Exports)
+            andalso lists:member({terminate, 1}, Exports)
     catch _:_ ->
             false
     end.

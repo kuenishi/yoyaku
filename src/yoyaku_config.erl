@@ -15,7 +15,7 @@
          interval/0]).
 
 init_ets() ->
-    ?MODULE = ets:new(?MODULE, [public, set, named_table]),
+    ?MODULE = ets:new(?MODULE, [public, bag, named_table]),
     ok.
 
 get_all_streams() ->
@@ -33,14 +33,15 @@ get_all_streams() ->
             Other
     end.
 
-register_streams(Streams) ->
+register_streams(Streams0) ->
+    Streams = [{yoyaku_stream:name(Stream), Stream} || Stream <- Streams0],
     true = ets:insert(?MODULE, Streams),
     ok.
 
 -spec get_config(atom()) -> {ok, yoyaku_stream:stream()}.
 get_config(Name) when is_atom(Name) ->
-    case ets:lookup(?MODULE, Name, 2) of
-        [Stream] -> {ok, Stream};
+    case ets:lookup(?MODULE, Name) of
+        [{Name,Stream}] -> {ok, Stream};
         [] -> {error, notfound};
         _ -> {error, {toomany, Name}}
     end.

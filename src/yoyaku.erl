@@ -22,7 +22,8 @@ do(Name, Opaque, _After, _Options) ->
         {ok, Stream} ->
             Bin = term_to_binary(Opaque),
             Bucket = yoyaku_stream:bucket_name(Stream),
-            ok = riakc_pb_socket:put(C, Bucket, Key, Bin),
+            Obj = riakc_obj:new(Bucket, Key, Bin),
+            ok = riakc_pb_socket:put(C, Obj),
             ok = riakc_pb_socket:stop(C);
         Error ->
             Error
@@ -32,7 +33,7 @@ do(Name, Opaque, _After, _Options) ->
 timestamp_key() ->
     Second = timestamp(),
     Prefix = integer_to_list(Second),
-    _ = random:seed(Second),
+    _ = random:seed(os:timestamp()),
     Suffix = random:uniform(100),
     list_to_binary([Prefix, $_, Suffix]).
     

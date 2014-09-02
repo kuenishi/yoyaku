@@ -47,8 +47,8 @@ check_all_bucket_props(Streams) ->
                                         check_bucket_props(C, Stream)
                                 end, Streams),
     ok = riakc_pb_socket:stop(C),
-    Buckets = [yoyaku_stream:bucket_name(Stream) || Stream <- Streams],
-    case Buckets -- ValidBuckets of
+    _Buckets = [yoyaku_stream:bucket_name(Stream) || Stream <- Streams],
+    case Streams -- ValidBuckets of
         [] -> ok;
         Rest ->
             %% all buckets should be set as allow_mult
