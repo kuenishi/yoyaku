@@ -8,11 +8,14 @@ Any job execution library can be built on top of this application.
 
 ## API
 
-`yoyaku:do(Name::atom(), Opaque::any(), After::time(), Option::proplists())` - register Yoyaku to the system. The yoyaku is stored in Riak.
+```erlang
+%% register Yoyaku to the system. The yoyaku is stored in Riak.
+yoyaku:do(Name::atom(), Opaque::any(), After::time(), Option::proplists())` - 
 
-`-callback yoyaku_stream:init(Args::list()) -> {ok, #state{}}.`
-`-callback yoyaku_stream:handle_invoke(Opaque::any(), Option::proplists(), State::#state{}) -> ok | retry.`
-`-callback yoyaku_stream:terminate(#state{}) -> ok.`
+-callback yoyaku_stream:init(Args::list()) -> {ok, #state{}}.
+-callback yoyaku_stream:handle_invoke(Opaque::any(), Option::proplists(), State::#state{}) -> ok | retry.
+-callback yoyaku_stream:terminate(#state{}) -> ok.
+```
 
 ## Configuration
 

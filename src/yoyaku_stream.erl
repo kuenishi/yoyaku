@@ -8,13 +8,48 @@
 %%%-------------------------------------------------------------------
 -module(yoyaku_stream).
 
--export([name/1, runner_module/1]).
+-export([name/1, bucket_name/1, runner_module/1,
+         options/1, valid_stream/1]).
 
--record(stream, {name, module, bucket_name, options}).
+-record(stream, {
+          name :: atom(),
+          module :: module(),
+          bucket_name :: string(),
+          options :: proplists:proplist()
+         }).
 
--callback yoyaku_stream:init(Args::list()) -> {ok, State::term()} | {error, term()}.
--callback yoyaku_stream:handle_invoke(Opaque::any(), Option::proplists:proplist(), State::term()) -> ok | retry.
--callback yoyaku_stream:terminate(State::term()) -> ok.
+-type stream() :: #stream{}.
+-export_type([stream/0]).
 
+-callback init(Args::list()) ->
+    {ok, State::term()} | {error, term()}.
+-callback handle_invoke(Opaque::any(), Option::proplists:proplist(), State::term()) -> ok | retry.
+-callback terminate(State::term()) -> ok.
+
+-spec name(stream()) -> atom().
 name(#stream{name=Name}) -> Name.
+
+-spec bucket_name(stream()) -> binary().
+bucket_name(#stream{bucket_name=Bucket}) when is_list(Bucket) ->
+    list_to_binary(Bucket);
+bucket_name(#stream{bucket_name=Bucket}) when is_binary(Bucket) ->
+    Bucket.
+
+-spec runner_module(stream()) -> module().
 runner_module(#stream{module=Module}) -> Module.
+
+-spec options(stream()) -> proplists:proplist().
+options(#stream{options=Options}) -> Options.
+
+valid_stream(Stream) ->
+    try
+        Module = runner_module(Stream),
+        erlang:get_module_info(Module),
+        Exports = Module:module_info(exports),
+        lists:member({init,1}, Exports)
+            andalso lists:member({handle_invoke, 3})
+            andalso lists:member({terminate, 1})
+    catch _:_ ->
+            false
+    end.
+        
