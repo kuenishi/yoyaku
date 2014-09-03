@@ -1,0 +1,14 @@
+{application, yoyaku,
+ [
+  {description, "Job reservation system"},
+  {vsn, "0.0.0"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  riakc,
+                  lager
+                 ]},
+  {mod, { yoyaku_app, []}},
+  {env, []}
+ ]}.
