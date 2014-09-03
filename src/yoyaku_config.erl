@@ -12,7 +12,12 @@
          get_all_streams/0,
          register_streams/1,
          get_config/1,
-         interval/0]).
+         interval/0,
+         connection_module/0,
+         riak_host/0
+        ]).
+
+%% -include_lib("eunit/include/eunit.hrl").
 
 init_ets() ->
     ?MODULE = ets:new(?MODULE, [public, bag, named_table]),
@@ -49,3 +54,10 @@ get_config(Name) when is_atom(Name) ->
 
 interval() ->
     90.
+
+
+connection_module() ->
+    application:get_env(yoyaku, connection_module).
+
+riak_host() ->
+    application:get_env(yoyaku, riak_host).

@@ -32,6 +32,7 @@ prepare_apps() ->
     application:load(yoyaku).
 
 terminate_apps() ->
+    ets:delete_all_objects(yoyaku_riakc_mock),
     Apps = [yoyaku|apps()],
     [application:stop(A) || A <- Apps].
 
@@ -39,19 +40,56 @@ terminate_apps() ->
 yoyaku_reserve_test() ->
     prepare_apps(),
 
-    Streams = [{stream, test_stream, test_worker, "test_stream", []}],
+    Streams = [{stream, test_stream, test_worker, "test_stream", 10, []}],
     [?assert(yoyaku_stream:valid_stream(Stream)) || Stream <- Streams],
     ok = application:set_env(yoyaku, streams, Streams),
     ok = application:start(yoyaku),
     ok = yoyaku:do(test_stream, foobar, 0, []),
 
+    Keys = get_all_keys(<<"test_stream">>),
+
+    ?assertEqual(1, length(Keys)),
+    %% ?debugVal(IndexResult?INDEX_RESULTS.keys),
+
+    terminate_apps().
+
+yoyaku_exec_test() ->
+    prepare_apps(),
+
+    Streams = [{stream, test_stream, test_worker, "test_stream", 10, []}],
+    [?assert(yoyaku_stream:valid_stream(Stream)) || Stream <- Streams],
+    ok = application:set_env(yoyaku, streams, Streams),
+    ok = application:start(yoyaku),
+    ok = yoyaku:do(test_stream, foobar, 0, []),
+    Keys = get_all_keys(<<"test_stream">>),
+    ?debugVal(Keys),
+    [?debugVal(get_key(<<"test_stream">>, Key)) || Key <- Keys],
+
+    lists:foreach(fun(Stream) ->
+                          Name = yoyaku_stream:daemon_name(Stream),
+                          yoyaku_d:manual_start(Name, foo)
+                  end, Streams),
+    yoyaku_d:manual_start(yoyaku_d_test_stream, foo),
+
+    %% wait for keys be swept
+    timer:sleep(1000),
+
+    ?debugVal(get_all_keys(<<"test_stream">>)),
+    terminate_apps().
+
+get_all_keys(Bucket) ->
     {ok, C} = riakc_pb_socket:start_link(localhost, 8087),
-    {ok, IndexResult} = riakc_pb_socket:get_index_range(C, <<"test_stream">>,
+    {ok, IndexResult} = riakc_pb_socket:get_index_range(C, Bucket,
                                                         <<"$key">>,
                                                         <<"0">>, <<"z">>, []),
     ok = riakc_pb_socket:stop(C),
 
-    ?assertEqual(1, length(IndexResult?INDEX_RESULTS.keys)),
-    ?debugVal(IndexResult?INDEX_RESULTS.keys),
+    IndexResult?INDEX_RESULTS.keys.
 
-    terminate_apps().
+get_key(Bucket, Key) ->
+    {ok, C} = riakc_pb_socket:start_link(localhost, 8087),
+    {ok, Result} = riakc_pb_socket:get(C, Bucket, Key),
+    ok = riakc_pb_socket:stop(C),
+    ?debugVal(riakc_obj:get_contents(Result)),
+    Result.
+    

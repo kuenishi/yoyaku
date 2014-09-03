@@ -11,18 +11,29 @@
 -behaviour(gen_fsm).
 
 %% API
--export([start_link/1]).
+-export([start_link/1,
+         manual_start/2,
+         cancel/1]).
+
+-include_lib("eunit/include/eunit.hrl").
+
+%% gen_fsm states
+-export([idle/2, idle/3,
+         processing/2, processing/3]).
 
 %% gen_fsm callbacks
--export([init/1, state_name/2, state_name/3, handle_event/3,
+-export([init/1, handle_event/3,
          handle_sync_event/4, handle_info/3, terminate/3, code_change/4]).
 
 -define(SERVER, ?MODULE).
 
 -record(state, {
           stream :: yoyaku_stream:stream(),
-          scanner :: yoyaku_scanner:scanner(),
-          queue = queue:new() :: queue:queue(binary())
+          scanner :: yoyaku_scanner:scanner() | undefined,
+          queue = queue:new() :: queue:queue(binary()),
+          waiting = [] :: [pid()],
+          in_progress = [],
+          result :: any()
          }).
 
 %%%===================================================================
@@ -39,7 +50,15 @@
 %% @end
 %%--------------------------------------------------------------------
 start_link(Stream) ->
-    gen_fsm:start_link(?MODULE, [Stream], []).
+    Name = yoyaku_stream:daemon_name(Stream),
+    gen_fsm:start_link({local, Name}, ?MODULE, [Stream], []).
+
+manual_start(Name, Argv) ->
+    %% gen_fsm:sync_send_event({local, Name}, {manual_start, Argv}).
+    gen_fsm:sync_send_event(Name, {manual_start, Argv}).
+
+cancel(Name) ->
+    gen_fsm:sync_send_event(Name, cancel).
 
 %%%===================================================================
 %%% gen_fsm callbacks
@@ -59,13 +78,8 @@ start_link(Stream) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Stream]) ->
-    %% {ok, C} = riakc_pb_socket:start_link(localhost, 8087),
-    %% take reservations here
-    IntervalSec = yoyaku_config:interval(),
-    {ok, idle, #state{
-                   stream = Stream
-                  },
-     IntervalSec * 1000}.
+    ping_after(Stream),
+    {ok, idle, #state{stream = Stream}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -82,8 +96,55 @@ init([Stream]) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-state_name(_Event, State) ->
-    {next_state, state_name, State}.
+idle({waiting, FromPid}, #state{waiting = Waiting0} = State0) ->
+    ping(),
+    {next_state, idle,
+     State0#state{waiting=[FromPid|Waiting0]}};
+
+idle(_Event, State) ->
+    %% unexpected _Event
+    _ = lager:debug("unexpected >>> ~p", [_Event]),
+    {next_state, idle, State}.
+
+processing({waiting, FromPid},
+           #state{waiting = Waiting0} = State0) ->
+
+    Waiting = case lists:member(FromPid, Waiting0) of
+                  true -> %% Just in case
+                      Waiting0;
+                  false ->
+                      [FromPid|Waiting0]
+              end,
+    State = State0#state{waiting=Waiting},
+    ping(),
+    {next_state, processing, State};
+
+processing({failed, Key},
+             #state{in_progress = InProgress0} = State0) ->
+    _ = lager:debug("Failed processing key ~p. Skipping.", [Key]),
+    InProgress = lists:delete(Key, InProgress0),
+    State = State0#state{in_progress=InProgress},
+    %% worker will soon calls {waiting, pid()} later
+    {next_state, processing, State};
+
+processing({finished, {Key, Result}},
+             #state{in_progress = InProgress0,
+                    stream = Stream,
+                    result = Result0} = State0) ->
+    InProgress = lists:delete(Key, InProgress0),
+    Module = yoyaku_stream:runner_module(Stream),
+    AggregatedResult = case Result0 of
+                           undefined -> Result;
+                           _ -> Module:merge(Result0, Result)
+                       end,
+    State = State0#state{in_progress=InProgress,
+                         result=AggregatedResult},
+    %% worker will soon calls {waiting, pid()} later
+    {next_state, processing, State};
+
+processing(_Event, State) ->
+    %% unexpected _Event
+    {next_state, processing, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -103,9 +164,45 @@ state_name(_Event, State) ->
 %%                   {stop, Reason, Reply, NewState}
 %% @end
 %%--------------------------------------------------------------------
-state_name(_Event, _From, State) ->
+idle({manual_start, _Argv}, _From,
+     State0 = #state{scanner=undefined,
+                     stream=Stream}) ->
+
+    Name = yoyaku_stream:name(Stream),
+    lager:info("starting batch: ~p (~p)", [_Argv, Name]),
+
+    %% start batching
+    Scanner0 = yoyaku_scanner:new(Stream),
+    {Keys, Scanner} = yoyaku_scanner:pop_keys(Scanner0),
+    case Keys of
+        [] ->
+            %% No keys to process
+            ping_after(Stream),
+            {reply, ok, idle, State0};
+        _ ->
+            State = State0#state{queue = queue:from_list(Keys),
+                                 scanner = Scanner},
+            {reply, ok, processing, State}
+    end;
+idle(cancel, _From, State) ->
+    {next_state, {erorr, not_running}, idle, State};
+idle(_Event, _From, State) ->
+    _ = lager:debug("~p at ~p", [_Event]),
+    Reply = {error, unknown_event_state},
+    {reply, Reply, idle, State}.
+
+processing({manual_start, _Argv}, _From, State) ->
+    Reply = {error, already_running},
+    {reply, Reply, processing, State};
+processing(cancel, _From, State0 = #state{stream=Stream}) ->
     Reply = ok,
-    {reply, Reply, state_name, State}.
+    State = State0#state{scanner=undefined, result=undefined},
+    ping_after(Stream),
+    {reply, Reply, idle, State};
+processing(_Event, _From, State) ->
+    Reply = {error, unknown_event_state},
+    {reply, Reply, processing, State}.
+
 
 %%--------------------------------------------------------------------
 %% @private
@@ -120,6 +217,7 @@ state_name(_Event, _From, State) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
+
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -156,35 +254,76 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %%                   {stop, Reason, NewState}
 %% @end
 %%--------------------------------------------------------------------
-handle_info(timeout, idle, State0 = #state{scanner=undefined,
-                                           stream=Stream}) ->
-%%     %% start batching
+
+handle_info(ping, idle, State0 = #state{scanner=undefined,
+                                        stream=Stream}) ->
+    %% start batching
     Scanner0 = yoyaku_scanner:new(Stream),
     {Keys, Scanner} = yoyaku_scanner:pop_keys(Scanner0),
-    State = State0#state{queue = queue:from_list(Keys),
-                         scanner = Scanner},
-    {next_state, fetching_next_set, State};
-%% handle_info(timeout, fetching_next_set,
-%%             State0 = #state{conn=C, stream=Stream, queue=Q0,
-%%                             end_key = End,
-%%                             continuation=Cont0}) ->
-    
-%%     Bucket = yoyaku_stream:bucket_name(Stream),
-%%     IndexQueryOptions = [{max_results, 1024}, {continuation,Cont0}],
-%%     {ok, IndexResults} = riakc_pb_socket:get_index_range(C,
-%%                                                          Bucket,
-%%                                                          <<"$key">>,
-%%                                                          <<"0">>,
-%%                                                          End,
-%%                                                          IndexQueryOptions),
-%%     ?INDEX_RESULTS{keys=Keys, continuation=Cont} = IndexResults,
-%%     case Keys of
-%%         [] ->
-%%     State = State0#state{queue = queue:from_list(Keys),
-%%                          end_key = End,
-%%                          continuation=Cont},
-        
-    
+    _ = lager:debug("~p <- ~p", [Keys, Scanner]), 
+    case Keys of
+        [] ->
+            %% No keys to process
+            ping_after(Stream),
+            {next_state, idle, State0};
+        _ ->
+            State = State0#state{queue = queue:from_list(Keys),
+                                 scanner = Scanner},
+            ping(),
+            {next_state, processing, State}
+    end;
+
+handle_info(ping, processing,
+            #state{waiting = []} = State0) ->
+    ?debugHere,
+    {next_state, processing, State0};
+
+handle_info(ping, processing,
+            #state{
+               in_progress = InProgress0,
+               queue = Queue0,
+               scanner = Scanner0,
+               stream = Stream,
+               waiting = [FromPid|Waiting]} = State0) ->
+
+    case queue:out(Queue0) of
+        {{value, Key}, Queue} ->
+            ok = yoyaku_worker:push_task(FromPid, Key),
+            {next_state, processing,
+             State0#state{queue=Queue, in_progress=[Key|InProgress0],
+                          waiting=Waiting}};
+        {empty, Queue0} when Scanner0 =/= undefined ->
+
+            case yoyaku_scanner:next(Scanner0) of
+                {ok, finished} ->
+                    State = State0#state{scanner=undefined},
+                    case InProgress0 of
+                        [] ->
+                            %% Batch finished!!!!
+                            do_report(State),
+                            ping_after(Stream),
+                            {next_state, idle, State#state{result=undefined}};
+                        _ ->
+                            %% still some to go
+                            {next_state, processing, State}
+                    end;
+                {ok, Scanner} ->
+                    {[Key|Keys], NextScanner} = yoyaku_scanner:pop_keys(Scanner),
+                    ok = yoyaku_worker:push_task(FromPid, Key),
+                    InProgress = [Key|InProgress0],
+                    State = State0#state{queue=queue:from_list(Keys),
+                                         scanner=NextScanner,
+                                         in_progress=InProgress},
+                    {next_state, processing, State}
+            end;
+        {empty, Queue0} ->
+            ping_after(Stream),
+            {next_state, idle, State0}
+    end;
+
+handle_info(ping, StateName, State) ->
+    ping_after(State#state.stream),
+    {next_state, StateName, State};
 handle_info(_Info, StateName, State) ->
     {next_state, StateName, State}.
 
@@ -199,7 +338,9 @@ handle_info(_Info, StateName, State) ->
 %% @spec terminate(Reason, StateName, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, _StateName, _State) ->
+terminate(normal, _, _) -> ok;
+terminate(Reason, StateName, _State) ->
+    _ = lager:debug("~p at ~p", [Reason, StateName]),
     ok.
 
 %%--------------------------------------------------------------------
@@ -217,3 +358,21 @@ code_change(_OldVsn, StateName, State, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+ping() ->
+    erlang:send_after(0, self(), ping).
+
+ping_after(Stream) ->
+    case yoyaku_stream:interval(Stream) of
+        infinity -> ok;
+        IntervalSec ->
+            erlang:send_after(IntervalSec * 1000, self(), ping)
+    end.
+
+do_report(#state{stream=Stream, result=Result}) ->
+    Module = yoyaku_stream:runner_module(Stream),
+    try
+        Module:report_batch(Result)
+    after
+        ok
+    end.

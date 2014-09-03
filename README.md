@@ -28,8 +28,10 @@ In `app.config` or whatever application configuration, set
 {yoyaku,
     {streams,
     [
-     {stream, garbage_collection, riak_cs_gc, "riak-cs-gc", []},
-     {stream, lifecycle_executer, riak_cs_lifecycle, "riak-cs-lifecycle", []}
+     {stream, garbage_collection, riak_cs_gc,
+              "riak-cs-gc", 900, []},
+     {stream, lifecycle_executer, riak_cs_lifecycle,
+              "riak-cs-lifecycle", 900, []}
     ]},
     {concurrency, 16}, %% TODO
     {riak_info, {env, riak_cs}} %% TODO

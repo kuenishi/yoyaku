@@ -10,25 +10,43 @@
 
 -export([do/4]).
 
--export([timestamp_key_prefix/0]).
+%% for internal use
+-export([timestamp_key_prefix/0,
+         fetch/2, delete/1]).
 
 %% @doc Register Yoyaku to the system. The yoyaku is stored in Riak.
 -spec yoyaku:do(Name::atom(), Opaque::any(), After::non_neg_integer(),
                 Options::proplists:proplist()) -> ok | {error, term()}.
 do(Name, Opaque, _After, _Options) ->
-    {ok, C} = riakc_pb_socket:start_link(localhost, 8087),
     Key = timestamp_key(),
     case yoyaku_config:get_config(Name) of
         {ok, Stream} ->
             Bin = term_to_binary(Opaque),
             Bucket = yoyaku_stream:bucket_name(Stream),
             Obj = riakc_obj:new(Bucket, Key, Bin),
+            {ok, C} = yoyaku_connection:checkout(),
             ok = riakc_pb_socket:put(C, Obj),
-            ok = riakc_pb_socket:stop(C);
+            ok = yoyaku_connection:checkin(C);
         Error ->
             Error
     end.
 
+-spec fetch(yoyaku_stream:stream(), Key::binary()) -> {ok, riakc_obj:riakc_obj()} | {error, term()}.
+fetch(Stream, Key) ->
+    Bucket = yoyaku_stream:bucket_name(Stream),
+    {ok, C} = yoyaku_connection:checkout(),
+    {ok, Obj} = riakc_pb_socket:get(C, Bucket, Key),
+    ok = yoyaku_connection:checkin(C),
+    {ok, Obj}.
+
+-spec delete(riakc_obj:riakc_obj()) -> ok | {error, term()}.
+delete(Obj) ->
+    {ok, C} = yoyaku_connection:checkout(),
+    try
+        riakc_pb_socket:delete_obj(C, Obj)
+    after
+        ok = yoyaku_connection:checkin(C)
+    end.
 
 timestamp_key() ->
     Second = timestamp(),
