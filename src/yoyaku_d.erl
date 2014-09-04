@@ -121,7 +121,7 @@ processing({waiting, FromPid},
 
 processing({failed, Key},
              #state{in_progress = InProgress0} = State0) ->
-    _ = lager:debug("Failed processing key ~p. Skipping.", [Key]),
+    _ = lager:warning("Failed processing key ~p. Skipping.", [Key]),
     InProgress = lists:delete(Key, InProgress0),
     State = State0#state{in_progress=InProgress},
     %% worker will soon calls {waiting, pid()} later
@@ -169,7 +169,7 @@ idle({manual_start, _Argv}, _From,
                      stream=Stream}) ->
 
     Name = yoyaku_stream:name(Stream),
-    lager:info("starting batch: ~p (~p)", [_Argv, Name]),
+    _ = lager:info("triggering batch manually: ~p (~p)", [_Argv, Name]),
 
     %% start batching
     Scanner0 = yoyaku_scanner:new(Stream),
@@ -197,6 +197,7 @@ processing({manual_start, _Argv}, _From, State) ->
 processing(cancel, _From, State0 = #state{stream=Stream}) ->
     Reply = ok,
     State = State0#state{scanner=undefined, result=undefined},
+    _ = lager:info("batch cancelled manually"),
     ping_after(Stream),
     {reply, Reply, idle, State};
 processing(_Event, _From, State) ->
@@ -269,6 +270,8 @@ handle_info(ping, idle, State0 = #state{scanner=undefined,
         _ ->
             State = State0#state{queue = queue:from_list(Keys),
                                  scanner = Scanner},
+            Name = yoyaku_stream:name(Stream),
+            _ = lager:info("starting batch: ~p", [Name]),
             ping(),
             {next_state, processing, State}
     end;
@@ -371,6 +374,8 @@ ping_after(Stream) ->
 
 do_report(#state{stream=Stream, result=Result}) ->
     Module = yoyaku_stream:runner_module(Stream),
+    Name = yoyaku_stream:name(Stream),
+    _ = lager:info("batch ~p has finished", [Name]),
     try
         Module:report_batch(Result)
     after
