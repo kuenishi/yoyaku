@@ -12,7 +12,6 @@
          get_all_streams/0,
          register_streams/1,
          get_config/1,
-         interval/0,
          connection_module/0,
          riak_host/0
         ]).
@@ -50,11 +49,6 @@ get_config(Name) when is_atom(Name) ->
         [] -> {error, notfound};
         _ -> {error, {toomany, Name}}
     end.
-
-
-interval() ->
-    90.
-
 
 connection_module() ->
     application:get_env(yoyaku, connection_module).
