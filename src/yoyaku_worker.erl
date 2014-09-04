@@ -90,7 +90,7 @@ handle_call({push_task, Key}, From,
     case yoyaku:fetch(Stream, Key) of
         {ok, Obj} ->
             Tasks = [binary_to_term(Content) ||
-                        Content <- riakc_obj:get_contents(Obj)],
+                        {_Meta,Content} <- riakc_obj:get_contents(Obj)],
             _ = lager:debug("task ~p <- ~p", [Tasks, riakc_obj:get_contents(Obj)]),
             case Tasks of
                 [] -> 

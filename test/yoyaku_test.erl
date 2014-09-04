@@ -32,7 +32,7 @@ prepare_apps() ->
     application:load(yoyaku).
 
 terminate_apps() ->
-    ets:delete_all_objects(yoyaku_riakc_mock),
+    catch ets:delete_all_objects(yoyaku_riakc_mock),
     Apps = [yoyaku|apps()],
     [application:stop(A) || A <- Apps].
 
