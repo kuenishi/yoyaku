@@ -25,9 +25,12 @@ do(Name, Opaque, _After, _Options) ->
             Bucket = yoyaku_stream:bucket_name(Stream),
             Obj = riakc_obj:new(Bucket, Key, Bin),
             {ok, C0} = yoyaku_connection:checkout(),
-            {ok, C} = riak_cs_riak_client:master_pbc(C0),
-            ok = riakc_pb_socket:put(C, Obj),
-            ok = yoyaku_connection:checkin(C0);
+            try
+                {ok, C} = riak_cs_riak_client:master_pbc(C0),
+                riakc_pb_socket:put(C, Obj)
+            after
+                ok = yoyaku_connection:checkin(C0)
+            end;
         Error ->
             Error
     end.
@@ -36,13 +39,22 @@ do(Name, Opaque, _After, _Options) ->
 fetch(Stream, Key) ->
     Bucket = yoyaku_stream:bucket_name(Stream),
     {ok, C} = yoyaku_connection:checkout(),
-    {ok, C1} = riak_cs_riak_client:master_pbc(C),
-    {ok, Obj} = riakc_pb_socket:get(C1, Bucket, Key),
-    ok = yoyaku_connection:checkin(C),
-    {ok, Obj}.
+    try
+        {ok, C1} = riak_cs_riak_client:master_pbc(C),
+        lager:debug(">>>>>>>>>>>>> fetching r_o ~p ~p", [Bucket, Key]),
+        case riakc_pb_socket:get(C1, Bucket, Key) of
+            {ok, Obj} ->
+                {ok, Obj};
+            {error, _} = E ->
+                E
+        end
+    after     
+        ok = yoyaku_connection:checkin(C)
+    end.
 
 -spec delete(riakc_obj:riakc_obj()) -> ok | {error, term()}.
 delete(Obj) ->
+    lager:debug(">>>>>>>>>>>>> deleting r_o ~p", [Obj]),
     {ok, C} = yoyaku_connection:checkout(),
     try
         {ok, C1} = riak_cs_riak_client:master_pbc(C),
@@ -55,7 +67,7 @@ timestamp_key() ->
     Second = timestamp(),
     Prefix = integer_to_list(Second),
     _ = random:seed(os:timestamp()),
-    Suffix = random:uniform(100),
+    Suffix = integer_to_list(random:uniform(100)),
     list_to_binary([Prefix, $_, Suffix]).
     
 timestamp() ->

@@ -39,6 +39,7 @@ start_link(Stream) ->
     gen_server:start_link({local, Name}, ?MODULE, [Stream], []).
 
 push_task(Pid, Key) ->
+    lager:debug("dispatching ~p to ~p", [Key, Pid]),
     gen_server:call(Pid, {push_task, Key}).
 
 %%%===================================================================
@@ -92,31 +93,24 @@ handle_call({push_task, Key}, From,
             Tasks = [binary_to_term(Content) ||
                         {_Meta,Content} <- riakc_obj:get_contents(Obj)],
             _ = lager:debug("task ~p <- ~p", [Tasks, riakc_obj:get_contents(Obj)]),
-            case Tasks of
-                [] -> 
-                    ok = yoyaku:delete(Obj),
-                    ok = gen_fsm:send_event(DaemonName, {failed, Key}),
+            case invoke_all_tasks(Tasks, State0, []) of
+                {ok, Results} ->
+                    Msg = case yoyaku:delete(Obj) of
+                              ok -> {finished, self(), Key, Results};
+                              {error, _} -> {failed, self(), Key}
+                          end,
+                    ok = gen_fsm:send_event(DaemonName, Msg),
                     ping(),
                     {noreply, State0};
-                _ ->
-                    case invoke_all_tasks(Tasks, State0, []) of
-                        {ok, Result} ->
-                            ?debugVal(Result),
-                            ok = yoyaku:delete(Obj),
-                            ok = gen_fsm:send_event(DaemonName,
-                                                    {finished, {Key, Result}}),
-                            ping(),
-                            {noreply, State0};
-                        {error, _} = E ->
-                            _ = lager:error("task ~p failed: ~p", [Key, E]),
-                            ok = gen_fsm:send_event(DaemonName, {failed, Key}),
-                            ping(),
-                            {noreply, State0}
-                    end
+                {error, _} = E ->
+                    _ = lager:error("task ~p failed: ~p", [Key, E]),
+                    ok = gen_fsm:send_event(DaemonName, {failed, self(), Key}),
+                    ping(),
+                    {noreply, State0}
             end;
         {error, _} = E ->
             _ = lager:error("task ~p failed: ~p", [Key, E]),
-            ok = gen_fsm:send_event(DaemonName, {failed, Key}),
+            ok = gen_fsm:send_event(DaemonName, {failed, self(), Key}),
             ping(),
             {noreply, State0}
     end;
@@ -192,8 +186,8 @@ ping() ->
     erlang:send_after(0, Self, ping).
 
 
-invoke_all_tasks([], _, [Result]) ->
-    {ok, Result};
+invoke_all_tasks([], _, Results) ->
+    {ok, Results};
 invoke_all_tasks([Task|Tasks],
                  #state{stream=Stream,
                         state=InternalState0} = State,

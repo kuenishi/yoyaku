@@ -50,6 +50,11 @@ yoyaku_sup -+- yoyaku_d_sup -+- yoyaku_worker (x N)
             +-... (as many as number of streams)
 ```
 
+## TODO (in near future)
+
+- introduce concurrency > 1
+- code cleanup
+
 ## TODO (in far future)
 
 - adaptive resource management and scheduling
