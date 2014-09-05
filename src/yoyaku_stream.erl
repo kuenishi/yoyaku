@@ -68,14 +68,24 @@ options(#stream{options=Options}) -> Options.
 valid_stream(Stream) ->
     try
         Module = runner_module(Stream),
-        erlang:get_module_info(Module),
-        Exports = Module:module_info(exports),
-        lists:member({init,1}, Exports)
-            andalso lists:member({handle_invoke, 2}, Exports)
-            andalso lists:member({merge, 2}, Exports)
-            andalso lists:member({report_batch, 1}, Exports)
-            andalso lists:member({terminate, 1}, Exports)
-    catch _:_ ->
+        %% erlang:get_module_info(Module),
+        %% Exports = Module:module_info(exports),
+        IntervalSec = interval(Stream),
+        R = is_atom(Module)
+            andalso is_atom(name(Stream))
+            andalso is_binary(bucket_name(Stream))
+            andalso ((is_integer(IntervalSec) andalso IntervalSec > 0)
+                     orelse IntervalSec =:= infinity)
+            andalso is_list(options(Stream)),
+        lager:info("~p => ~p", [Stream, R]),
+        R
+        %% lists:member({init,1}, Exports)
+        %%     andalso lists:member({handle_invoke, 2}, Exports)
+        %%     andalso lists:member({merge, 2}, Exports)
+        %%     andalso lists:member({report_batch, 1}, Exports)
+        %%     andalso lists:member({terminate, 1}, Exports)
+    catch _:E ->
+            lager:error("~p", [E]),
             false
     end.
         

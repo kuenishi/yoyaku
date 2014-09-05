@@ -199,6 +199,7 @@ invoke_all_tasks([Task|Tasks],
                         state=InternalState0} = State,
                  ResultList) ->
     Module = yoyaku_stream:runner_module(Stream),
+    _ = lager:debug("Process task: ~p", [Task]),
     try
         case Module:handle_invoke(Task, InternalState0) of
             {ok, Result} ->

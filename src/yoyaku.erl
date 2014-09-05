@@ -24,9 +24,10 @@ do(Name, Opaque, _After, _Options) ->
             Bin = term_to_binary(Opaque),
             Bucket = yoyaku_stream:bucket_name(Stream),
             Obj = riakc_obj:new(Bucket, Key, Bin),
-            {ok, C} = yoyaku_connection:checkout(),
+            {ok, C0} = yoyaku_connection:checkout(),
+            {ok, C} = riak_cs_riak_client:master_pbc(C0),
             ok = riakc_pb_socket:put(C, Obj),
-            ok = yoyaku_connection:checkin(C);
+            ok = yoyaku_connection:checkin(C0);
         Error ->
             Error
     end.
@@ -35,7 +36,8 @@ do(Name, Opaque, _After, _Options) ->
 fetch(Stream, Key) ->
     Bucket = yoyaku_stream:bucket_name(Stream),
     {ok, C} = yoyaku_connection:checkout(),
-    {ok, Obj} = riakc_pb_socket:get(C, Bucket, Key),
+    {ok, C1} = riak_cs_riak_client:master_pbc(C),
+    {ok, Obj} = riakc_pb_socket:get(C1, Bucket, Key),
     ok = yoyaku_connection:checkin(C),
     {ok, Obj}.
 
@@ -43,7 +45,8 @@ fetch(Stream, Key) ->
 delete(Obj) ->
     {ok, C} = yoyaku_connection:checkout(),
     try
-        riakc_pb_socket:delete_obj(C, Obj)
+        {ok, C1} = riak_cs_riak_client:master_pbc(C),
+        riakc_pb_socket:delete_obj(C1, Obj)
     after
         ok = yoyaku_connection:checkin(C)
     end.

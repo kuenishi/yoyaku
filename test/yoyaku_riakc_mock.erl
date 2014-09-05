@@ -27,7 +27,7 @@ init() ->
     meck:expect(riakc_pb_socket, stop,
                 fun(C) when is_pid(C) -> ok end),
     meck:expect(riakc_pb_socket, ping,
-                fun(C) when is_pid(C) -> ok end),
+                fun(C) when is_pid(C) -> pong end),
     meck:expect(riakc_pb_socket, get_bucket,
                 fun(C, Bucket) when is_pid(C) andalso is_binary(Bucket) ->
                         {ok, [{allow_mult, true}]}
@@ -75,15 +75,19 @@ emulate_get_index_range(Bucket, _Start, _End, Options) ->
             case proplists:get_value(continuation, Options) of
                 undefined ->
                     First = ets:first(?MODULE),
-                    Keys = get_n(?MODULE, First, MaxResults, [First]),
+                    BKeys = get_n(?MODULE, First, MaxResults, [First]),
+                    Keys = [ Key || {{B, Key}, _} <- Objects0, B =:= Bucket ],
                     Last = case Keys of [] -> <<>>; [H|_] -> H end,
                     {ok, ?INDEX_RESULTS{keys=Keys, continuation=Last}};
                 Key0 ->
-                    Keys = get_n(?MODULE, Key0, MaxResults, []),
+                    BKeys = get_n(?MODULE, Key0, MaxResults, []),
+                    Keys = [ Key || {{B, Key}, _} <- Objects0, B =:= Bucket ],
                     Last = case Keys of [] -> <<>>; [H|_] -> H end,
                     {ok, ?INDEX_RESULTS{keys=Keys, continuation=Last}}
                 end
     end.
+
+
 
 get_n(_, '$end_of_table', _, Acc) -> lists:reverse(Acc);
 get_n(_, _, 0, Acc) -> lists:reverse(Acc);

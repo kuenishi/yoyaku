@@ -42,7 +42,7 @@ stream_to_childspec(Stream) ->
 
 check_all_bucket_props(Streams) ->
     {ok, C} = riakc_pb_socket:start_link(localhost, 8087),
-    ok = riakc_pb_socket:ping(C),
+    pong = riakc_pb_socket:ping(C),
     ValidBuckets = lists:filter(fun(Stream) ->
                                         check_bucket_props(C, Stream)
                                 end, Streams),

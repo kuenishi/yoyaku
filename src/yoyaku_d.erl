@@ -169,7 +169,6 @@ idle({manual_start, _Argv}, _From,
                      stream=Stream}) ->
 
     Name = yoyaku_stream:name(Stream),
-    _ = lager:info("triggering batch manually: ~p (~p)", [_Argv, Name]),
 
     %% start batching
     Scanner0 = yoyaku_scanner:new(Stream),
@@ -177,11 +176,13 @@ idle({manual_start, _Argv}, _From,
     case Keys of
         [] ->
             %% No keys to process
+            _ = lager:info("no yoyaku found: ~p (~p)", [_Argv, Name]),
             ping_after(Stream),
             {reply, ok, idle, State0};
         _ ->
             State = State0#state{queue = queue:from_list(Keys),
                                  scanner = Scanner},
+            _ = lager:info("manual batch on ~p triggered: ~p Keys", [Name, length(Keys)]),
             {reply, ok, processing, State}
     end;
 idle(cancel, _From, State) ->
@@ -259,19 +260,22 @@ handle_sync_event(_Event, _From, StateName, State) ->
 handle_info(ping, idle, State0 = #state{scanner=undefined,
                                         stream=Stream}) ->
     %% start batching
+    timer:sleep(10000),
     Scanner0 = yoyaku_scanner:new(Stream),
+    _ = lager:debug("~p => ~p", [Stream, Scanner0]), 
     {Keys, Scanner} = yoyaku_scanner:pop_keys(Scanner0),
     _ = lager:debug("~p <- ~p", [Keys, Scanner]), 
+    Name = yoyaku_stream:name(Stream),
     case Keys of
         [] ->
             %% No keys to process
+            _ = lager:debug("Batch ~p didn't run because no tasks left.", [Name]),
             ping_after(Stream),
             {next_state, idle, State0};
         _ ->
             State = State0#state{queue = queue:from_list(Keys),
                                  scanner = Scanner},
-            Name = yoyaku_stream:name(Stream),
-            _ = lager:info("starting batch: ~p", [Name]),
+            _ = lager:info("starting batch ~p: ~p keys.", [Name, length(Keys)]),
             ping(),
             {next_state, processing, State}
     end;
