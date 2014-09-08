@@ -27,6 +27,7 @@
 %% API
 -export([start_link/1,
          manual_start/2,
+         status/1,
          cancel/1]).
 
 -include_lib("eunit/include/eunit.hrl").
@@ -47,7 +48,8 @@
           queue = queue:new() :: queue:queue(binary()),
           waiting = [] :: [pid()],
           in_progress = [],
-          results = [] :: [Opaque::any()]
+          results = [] :: [Opaque::any()],
+          timer :: reference()
          }).
 
 %%%===================================================================
@@ -71,6 +73,9 @@ manual_start(Name, Argv) ->
     %% gen_fsm:sync_send_event({local, Name}, {manual_start, Argv}).
     gen_fsm:sync_send_event(Name, {manual_start, Argv}).
 
+status(Name) ->
+    gen_fsm:sync_send_event(Name, status).
+
 cancel(Name) ->
     gen_fsm:sync_send_event(Name, cancel).
 
@@ -92,8 +97,9 @@ cancel(Name) ->
 %% @end
 %%--------------------------------------------------------------------
 init([Stream]) ->
-    ping_after(Stream),
-    {ok, idle, #state{stream = Stream}}.
+    Ref = ping_after(Stream),
+    _ = lager:debug("here, timeout> ~p <= ~p", [Stream, erlang:read_timer(Ref)]),
+    {ok, idle, #state{stream = Stream, timer=Ref}, 0}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -111,6 +117,7 @@ init([Stream]) ->
 %% @end
 %%--------------------------------------------------------------------
 idle({waiting, FromPid}, State) ->
+    lager:debug("here> ~p", [FromPid]),
     {next_state, idle, maybe_add_worker(FromPid, State)};
 
 idle({finished, FromPid, _, _}, State) ->
@@ -175,21 +182,6 @@ processing(_Event, State) ->
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% There should be one instance of this function for each possible
-%% state name. Whenever a gen_fsm receives an event sent using
-%% gen_fsm:sync_send_event/[2,3], the instance of this function with
-%% the same name as the current state name StateName is called to
-%% handle the event.
-%%
-%% @spec state_name(Event, From, State) ->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {reply, Reply, NextStateName, NextState} |
-%%                   {reply, Reply, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState} |
-%%                   {stop, Reason, Reply, NewState}
-%% @end
-%%--------------------------------------------------------------------
 idle({manual_start, _Argv}, _From, State0) ->
 
     _ = lager:info("manual batch on triggered"),
@@ -197,9 +189,13 @@ idle({manual_start, _Argv}, _From, State0) ->
         {ok, State} -> {reply, ok, processing, State};
         E -> {reply, E, idle, State0}
     end;
+idle(status, _From, State) ->
+    Ref = State#state.timer,
+    lager:debug("~p, next batch: ~p", [State, erlang:read_timer(Ref)]),
+    {reply, {ok, State}, idle, State};
 
 idle(cancel, _From, State) ->
-    {next_state, {erorr, not_running}, idle, State};
+    {redply, {erorr, not_running}, idle, State};
 
 idle(_Event, _From, State) ->
     _ = lager:debug("~p at ~p", [_Event]),
@@ -209,6 +205,12 @@ idle(_Event, _From, State) ->
 processing({manual_start, _Argv}, _From, State) ->
     Reply = {error, already_running},
     {reply, Reply, processing, State};
+
+processing(status, _From, State) ->
+    Ref = State#state.timer,
+    lager:debug("now running: ~p ~p", [State, erlang:read_timer(Ref)]),
+    {reply, {ok, State}, processing, State};
+
 processing(cancel, _From, State) ->
     Reply = ok,
     _ = lager:info("batch cancelled manually"),
@@ -218,50 +220,37 @@ processing(_Event, _From, State) ->
     Reply = {error, unknown_event_state},
     {reply, Reply, processing, State}.
 
-
-%%--------------------------------------------------------------------
 %% @private
 %% @doc gen_fsm:send_all_state_event/2, this function is called to handle
 handle_event(_Event, StateName, State) ->
     {next_state, StateName, State}.
 
-%%--------------------------------------------------------------------
 %% @private
 %% @doc gen_fsm:sync_send_all_state_event/[2,3], this function is called
 handle_sync_event(_Event, _From, StateName, State) ->
     Reply = ok,
     {reply, Reply, StateName, State}.
 
-%%--------------------------------------------------------------------
 %% @private
 %% @doc
-%% This function is called by a gen_fsm when it receives any
-%% message other than a synchronous or asynchronous event
-%% (or a system message).
-%%
-%% @spec handle_info(Info,StateName,State)->
-%%                   {next_state, NextStateName, NextState} |
-%%                   {next_state, NextStateName, NextState, Timeout} |
-%%                   {stop, Reason, NewState}
-%% @end
-%%--------------------------------------------------------------------
-
 handle_info(ping, idle, State0 = #state{stream=Stream}) ->
+    lager:debug("here ping came> ~p", [Stream]),
     timer:sleep(10000),
     case maybe_start_processing(State0) of
         {ok, State} ->
             continue(),
             {next_state, processing, State};
         {error, not_started} ->
-            ping_after(Stream),
-            {next_state, idle, State0};
+            Ref = ping_after(Stream),
+            {next_state, idle, State0#state{timer=Ref}};
         {error, _} = E ->
             _ = lager:error("Batch didn't start: ~p", [E]),
-            ping_after(Stream),
-            {next_state, idle, State0}
+            Ref = ping_after(Stream),
+            {next_state, idle, State0#state{timer=Ref}}
     end;
 
 handle_info(_Info, StateName, State) ->
+    _ = lager:error("unknown message at ~p: ~p", [StateName, _Info]),
     {next_state, StateName, State}.
 
 %%--------------------------------------------------------------------
@@ -346,8 +335,8 @@ try_dispatch_task(#state{
 %% @doc finalize the process and return a fresh state
 finalize(State = #state{stream=Stream, waiting=Waiting}) ->
     do_report(State),
-    ping_after(Stream),
-    #state{stream=Stream, waiting=Waiting}.
+    Ref = ping_after(Stream),
+    #state{stream=Stream, waiting=Waiting, timer=Ref}.
 
 maybe_start_processing(State0 = #state{scanner=undefined,
                                        stream=Stream}) ->
@@ -381,7 +370,8 @@ ping_after(Stream) ->
     case yoyaku_stream:interval(Stream) of
         infinity -> ok;
         IntervalSec ->
-            erlang:send_after(IntervalSec * 1000, self(), ping)
+            Self = self(),
+            erlang:send_after(IntervalSec * 1000, Self, ping)
     end.
 
 do_report(#state{stream=Stream, results=Results}) ->

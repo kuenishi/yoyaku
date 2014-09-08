@@ -15,10 +15,11 @@
          fetch/2, delete/1]).
 
 %% @doc Register Yoyaku to the system. The yoyaku is stored in Riak.
--spec yoyaku:do(Name::atom(), Opaque::any(), After::non_neg_integer(),
+-spec yoyaku:do(Name::atom(), Opaque::any(), AfterSec::non_neg_integer(),
                 Options::proplists:proplist()) -> ok | {error, term()}.
-do(Name, Opaque, _After, _Options) ->
-    Key = timestamp_key(),
+do(Name, Opaque, AfterSec, _Options) when is_integer(AfterSec)
+                                          andalso AfterSec > 0 ->
+    Key = timestamp_key(AfterSec),
     case yoyaku_config:get_config(Name) of
         {ok, Stream} ->
             Bin = term_to_binary(Opaque),
@@ -54,7 +55,7 @@ fetch(Stream, Key) ->
 
 -spec delete(riakc_obj:riakc_obj()) -> ok | {error, term()}.
 delete(Obj) ->
-    lager:debug(">>>>>>>>>>>>> deleting r_o ~p", [Obj]),
+    lager:debug(">>>>>>>>>>>>> deleting r_o ~p", [riakc_obj:key(Obj)]),
     {ok, C} = yoyaku_connection:checkout(),
     try
         {ok, C1} = yoyaku_connection:acquire(C),
@@ -63,9 +64,9 @@ delete(Obj) ->
         ok = yoyaku_connection:checkin(C)
     end.
 
-timestamp_key() ->
+timestamp_key(AfterSec) ->
     Second = timestamp(),
-    Prefix = integer_to_list(Second),
+    Prefix = integer_to_list(Second + AfterSec),
     _ = random:seed(os:timestamp()),
     Suffix = integer_to_list(random:uniform(100)),
     list_to_binary([Prefix, $_, Suffix]).
