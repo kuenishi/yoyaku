@@ -152,8 +152,8 @@ processing({waiting, FromPid}, State0) ->
     continue(),
     {next_state, processing, State};
 
-processing({failed, FromPid, Key}, State0) ->
-    _ = lager:warning("Failed processing key ~p. Skipping.", [Key]),
+processing({failed, FromPid, Key, Reason}, State0) ->
+    _ = lager:warning("Failed processing key ~p (~p). Skipping.", [Key, Reason]),
 
     State = maybe_add_worker(FromPid,
                              update_progress(Key, State0)),
@@ -235,7 +235,6 @@ handle_sync_event(_Event, _From, StateName, State) ->
 %% @doc
 handle_info(ping, idle, State0 = #state{stream=Stream}) ->
     lager:debug("here ping came> ~p", [Stream]),
-    timer:sleep(10000),
     case maybe_start_processing(State0) of
         {ok, State} ->
             continue(),

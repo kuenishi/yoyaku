@@ -97,20 +97,20 @@ handle_call({push_task, Key}, From,
                 {ok, Results} ->
                     Msg = case yoyaku:delete(Obj) of
                               ok -> {finished, self(), Key, Results};
-                              {error, _} -> {failed, self(), Key}
+                              {error, _} = E -> {failed, self(), Key, E}
                           end,
                     ok = gen_fsm:send_event(DaemonName, Msg),
                     ping(),
                     {noreply, State0};
                 {error, _} = E ->
                     _ = lager:error("task ~p failed: ~p", [Key, E]),
-                    ok = gen_fsm:send_event(DaemonName, {failed, self(), Key}),
+                    ok = gen_fsm:send_event(DaemonName, {failed, self(), Key, E}),
                     ping(),
                     {noreply, State0}
             end;
         {error, _} = E ->
             _ = lager:error("task ~p failed: ~p", [Key, E]),
-            ok = gen_fsm:send_event(DaemonName, {failed, self(), Key}),
+            ok = gen_fsm:send_event(DaemonName, {failed, self(), Key, E}),
             ping(),
             {noreply, State0}
     end;
@@ -204,6 +204,7 @@ invoke_all_tasks([Task|Tasks],
                 E
         end
     catch Type:Error ->
+            lager:error("~p, ~p", [Error, erlang:get_stacktrace()]),
             {error, {Type, Error}}
     end.
             
