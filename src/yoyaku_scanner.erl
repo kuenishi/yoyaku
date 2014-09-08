@@ -37,7 +37,7 @@ next(#scanner{keys=Keys0, continuation=Cont0, end_key=End, stream=Stream}
     IndexQueryOptions = [{max_results, 1024}, {continuation, Cont0}],
     {ok, C} = yoyaku_connection:checkout(),
     try
-        {ok, C1} = riak_cs_riak_client:master_pbc(C),
+        {ok, C1} = yoyaku_connection:acquire(C),
         case  riakc_pb_socket:get_index_range(C1,
                                               Bucket,
                                               <<"$key">>,

@@ -8,7 +8,11 @@
 %%%-------------------------------------------------------------------
 -module(yoyaku_connection).
 
--export([checkout/0, checkin/1]).
+-export([checkout/0, checkin/1, acquire/1]).
+
+-callback checkout() -> {ok, pid()} | {error, term()}.
+-callback checkin(pid()) -> ok | {error, term()}.
+-callback acquire(pid()) -> {ok, pid()}.
 
 -spec checkout() -> {ok, pid()} | {error, term()}.
 checkout() ->
@@ -32,3 +36,13 @@ checkin(Pid) ->
         _ ->
             riakc_pb_socket:stop(Pid)
     end.
+
+-spec acquire(pid()) -> {ok, pid()}.
+acquire(Pid) ->
+    case yoyaku_config:connection_module() of
+        {ok, Module} when is_atom(Module) ->
+            Module:master_pbc(Pid);
+        _ ->
+            {ok, Pid}
+    end.
+

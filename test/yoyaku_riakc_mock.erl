@@ -76,12 +76,12 @@ emulate_get_index_range(Bucket, _Start, _End, Options) ->
                 undefined ->
                     First = ets:first(?MODULE),
                     BKeys = get_n(?MODULE, First, MaxResults, [First]),
-                    Keys = [ Key || {{B, Key}, _} <- Objects0, B =:= Bucket ],
+                    Keys = [ Key || {B, Key} <- BKeys, B =:= Bucket ],
                     Last = case Keys of [] -> <<>>; [H|_] -> H end,
                     {ok, ?INDEX_RESULTS{keys=Keys, continuation=Last}};
                 Key0 ->
                     BKeys = get_n(?MODULE, Key0, MaxResults, []),
-                    Keys = [ Key || {{B, Key}, _} <- Objects0, B =:= Bucket ],
+                    Keys = [ Key || {B, Key} <- BKeys, B =:= Bucket ],
                     Last = case Keys of [] -> <<>>; [H|_] -> H end,
                     {ok, ?INDEX_RESULTS{keys=Keys, continuation=Last}}
                 end

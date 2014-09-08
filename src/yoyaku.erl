@@ -26,7 +26,7 @@ do(Name, Opaque, _After, _Options) ->
             Obj = riakc_obj:new(Bucket, Key, Bin),
             {ok, C0} = yoyaku_connection:checkout(),
             try
-                {ok, C} = riak_cs_riak_client:master_pbc(C0),
+                {ok, C} = yoyaku_connection:acquire(C0),
                 riakc_pb_socket:put(C, Obj)
             after
                 ok = yoyaku_connection:checkin(C0)
@@ -40,7 +40,7 @@ fetch(Stream, Key) ->
     Bucket = yoyaku_stream:bucket_name(Stream),
     {ok, C} = yoyaku_connection:checkout(),
     try
-        {ok, C1} = riak_cs_riak_client:master_pbc(C),
+        {ok, C1} = yoyaku_connection:acquire(C),
         lager:debug(">>>>>>>>>>>>> fetching r_o ~p ~p", [Bucket, Key]),
         case riakc_pb_socket:get(C1, Bucket, Key) of
             {ok, Obj} ->
@@ -57,7 +57,7 @@ delete(Obj) ->
     lager:debug(">>>>>>>>>>>>> deleting r_o ~p", [Obj]),
     {ok, C} = yoyaku_connection:checkout(),
     try
-        {ok, C1} = riak_cs_riak_client:master_pbc(C),
+        {ok, C1} = yoyaku_connection:acquire(C),
         riakc_pb_socket:delete_obj(C1, Obj)
     after
         ok = yoyaku_connection:checkin(C)
