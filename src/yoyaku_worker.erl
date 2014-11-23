@@ -85,9 +85,9 @@ init([Stream]) ->
 %%--------------------------------------------------------------------
 handle_call({push_task, Key}, From,
             #state{stream=Stream}=State0) ->
+    _ = lager:debug("fetching batch ~p", [Key]),
     DaemonName = yoyaku_stream:daemon_name(Stream),
     gen_server:reply(From, ok),
-    _ = lager:debug("fetching batch ~p", [Key]),
     case yoyaku:fetch(Stream, Key) of
         {ok, Obj} ->
             Tasks = [binary_to_term(Content) ||
@@ -114,7 +114,8 @@ handle_call({push_task, Key}, From,
             ping(),
             {noreply, State0}
     end;
-
+handle_call(status, _From, State) ->
+    {reply, State, State};
 handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.

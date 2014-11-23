@@ -98,6 +98,7 @@ cancel(Name) ->
 %%--------------------------------------------------------------------
 init([Stream]) ->
     Ref = ping_after(Stream),
+    lager:info("starting yoyaku_d for stream ~p", [Stream]),
     _ = lager:debug("here, timeout> ~p <= ~p", [Stream, erlang:read_timer(Ref)]),
     {ok, idle, #state{stream = Stream, timer=Ref}, 0}.
 
@@ -117,7 +118,7 @@ init([Stream]) ->
 %% @end
 %%--------------------------------------------------------------------
 idle({waiting, FromPid}, State) ->
-    lager:debug("here> ~p", [FromPid]),
+    lager:debug("here a worker came> ~p", [FromPid]),
     {next_state, idle, maybe_add_worker(FromPid, State)};
 
 idle({finished, FromPid, _, _}, State) ->
@@ -186,8 +187,11 @@ idle({manual_start, _Argv}, _From, State0) ->
 
     _ = lager:info("manual batch on triggered"),
     case maybe_start_processing(State0) of
-        {ok, State} -> {reply, ok, processing, State};
-        E -> {reply, E, idle, State0}
+        {ok, State} ->
+            continue(),
+            {reply, ok, processing, State};
+        E ->
+            {reply, E, idle, State0}
     end;
 idle(status, _From, State) ->
     Ref = State#state.timer,

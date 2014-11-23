@@ -14,12 +14,15 @@
 -export([timestamp_key_prefix/0,
          fetch/2, delete/1]).
 
+-export([manual_start/0, status/0]).
+
 %% @doc Register Yoyaku to the system. The yoyaku is stored in Riak.
 -spec yoyaku:do(Name::atom(), Opaque::any(), AfterSec::non_neg_integer(),
                 Options::proplists:proplist()) -> ok | {error, term()}.
 do(Name, Opaque, AfterSec, _Options) when is_integer(AfterSec)
                                           andalso AfterSec > 0 ->
     Key = timestamp_key(AfterSec),
+
     case yoyaku_config:get_config(Name) of
         {ok, Stream} ->
             Bin = term_to_binary(Opaque),
@@ -64,13 +67,25 @@ delete(Obj) ->
         ok = yoyaku_connection:checkin(C)
     end.
 
-timestamp_key(AfterSec) ->
+timestamp_key(AfterSec0) ->
     Second = timestamp(),
+    AfterSec = maybe_test_mode(AfterSec0),
     Prefix = integer_to_list(Second + AfterSec),
     _ = random:seed(os:timestamp()),
     Suffix = integer_to_list(random:uniform(100)),
     list_to_binary([Prefix, $_, Suffix]).
-    
+
+maybe_test_mode(AfterSec) ->
+    case application:get_env(yoyaku, test_mode) of
+        true ->
+            case AfterSec div 10000 of
+                0 -> 1;
+                S -> S
+            end;
+        _ ->
+            AfterSec
+    end.
+
 timestamp() ->
     {MegaSecs, Secs, _MicroSecs} = os:timestamp(),
     (MegaSecs * 1000000) + Secs.
@@ -78,3 +93,18 @@ timestamp() ->
 timestamp_key_prefix() ->
     Seconds = timestamp(),
     list_to_binary(integer_to_list(Seconds)).
+
+manual_start() ->
+    {ok, Streams} = yoyaku_config:get_all_streams(),
+    [begin
+         Name = yoyaku_stream:daemon_name(Stream),
+         yoyaku_d:manual_start(Name, [])
+     end || Stream <- Streams].
+
+status() ->
+    {ok, Streams} = yoyaku_config:get_all_streams(),
+    [begin
+         Name = yoyaku_stream:daemon_name(Stream),
+         {ok, Status} = yoyaku_d:status(Name),
+         Status
+     end || Stream <- Streams].

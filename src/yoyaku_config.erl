@@ -44,10 +44,15 @@ register_streams(Streams0) ->
 
 -spec get_config(atom()) -> {ok, yoyaku_stream:stream()}.
 get_config(Name) when is_atom(Name) ->
-    case ets:lookup(?MODULE, Name) of
-        [{Name,Stream}] -> {ok, Stream};
-        [] -> {error, notfound};
-        _ -> {error, {toomany, Name}}
+    try
+        case ets:lookup(?MODULE, Name) of
+            [{Name,Stream}] -> {ok, Stream};
+            [] -> {error, notfound};
+            _ -> {error, {toomany, Name}}
+        end
+    catch Type:Error ->
+            lager:error("yoyaku is not enabled (~p:~p)", [Type, Error]),
+            {error, badarg}
     end.
 
 connection_module() ->
