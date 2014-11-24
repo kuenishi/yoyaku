@@ -76,7 +76,7 @@ timestamp_key(AfterSec0) ->
     list_to_binary([Prefix, $_, Suffix]).
 
 maybe_test_mode(AfterSec) ->
-    case application:get_env(yoyaku, test_mode) of
+    case application:get_env(yoyaku, test_mode, false) of
         true ->
             case AfterSec div 10000 of
                 0 -> 1;
