@@ -1,0 +1,5 @@
+ebin
+*~
+deps
+.eunit
+.local_dialyzer_plt
