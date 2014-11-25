@@ -16,7 +16,9 @@
          riak_host/0
         ]).
 
-%% -include_lib("eunit/include/eunit.hrl").
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
 
 init_ets() ->
     ?MODULE = ets:new(?MODULE, [public, bag, named_table]),
@@ -29,8 +31,8 @@ get_all_streams() ->
                 true ->
                     {ok, Streams};
                 false ->
-                    InvalidStream = Streams --
-                        lists:filter(fun yoyaku_stream:valid_stream/1, Streams),
+                    ValidStreams = lists:filter(fun yoyaku_stream:valid_stream/1, Streams),
+                    InvalidStream = Streams -- ValidStreams,
                     {error, {invalid_stream, InvalidStream}}
             end;
         Other ->
@@ -60,3 +62,12 @@ connection_module() ->
 
 riak_host() ->
     application:get_env(yoyaku, riak_host).
+
+
+-ifdef(TEST).
+get_all_streams_test() ->
+    Streams0 = [{stream,test_stream,test_worker,"test_stream",10,[]}],
+    ok = application:set_env(yoyaku, streams, Streams0),
+    ?assertEqual({ok, Streams0}, get_all_streams()).
+
+-endif.

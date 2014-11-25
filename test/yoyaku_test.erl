@@ -6,10 +6,17 @@
 -include_lib("riakc/include/riakc.hrl").
 
 yoyaku_startstop_test() ->
+    catch meck:new(riak_cs_gc, [non_strict]),
+    meck:expect(riak_cs_gc, init,
+                fun(Argv) ->  ?debugVal(Argv), {ok, state} end),
+    catch meck:new(riak_cs_lifecycle, [non_strict]),
+    meck:expect(riak_cs_lifecycle, init,
+                fun(Argv) ->  ?debugVal(Argv), {ok, state} end),
+
     prepare_apps(),
     BadStreams = [
-               {stream, garbage_collection, riak_cs_gc, "riak-cs-gc", []},
-               {stream, lifecycle_executer, riak_cs_lifecycle, "riak-cs-lifecycle", []}
+               {stream, garbage_collection, riak_cs_gc, "riak-cs-gc", 90, []},
+               {stream, lifecycle_executer, riak_cs_lifecycle, "riak-cs-lifecycle", 80, []}
               ],
     ok = application:set_env(yoyaku, streams, BadStreams),
     {error, _} = application:start(yoyaku),
@@ -44,7 +51,7 @@ yoyaku_reserve_test() ->
     [?assert(yoyaku_stream:valid_stream(Stream)) || Stream <- Streams],
     ok = application:set_env(yoyaku, streams, Streams),
     ok = application:start(yoyaku),
-    ok = yoyaku:do(test_stream, foobar, 0, []),
+    ok = yoyaku:do(test_stream, foobar, 1, []),
 
     Keys = get_all_keys(<<"test_stream">>),
 
@@ -60,20 +67,14 @@ yoyaku_exec_test() ->
     [?assert(yoyaku_stream:valid_stream(Stream)) || Stream <- Streams],
     ok = application:set_env(yoyaku, streams, Streams),
     ok = application:start(yoyaku),
-    ok = yoyaku:do(test_stream, foobar, 0, []),
+    ok = yoyaku:do(test_stream, foobar, 1, []),
     Keys = get_all_keys(<<"test_stream">>),
     ?debugVal(Keys),
     [?debugVal(get_key(<<"test_stream">>, Key)) || Key <- Keys],
-
-    lists:foreach(fun(Stream) ->
-                          Name = yoyaku_stream:daemon_name(Stream),
-                          yoyaku_d:manual_start(Name, foo)
-                  end, Streams),
-    yoyaku_d:manual_start(yoyaku_d_test_stream, foo),
-
+    %% trigger all yoyaku checker daemon
+    yoyaku:manual_start(),
     %% wait for keys be swept
     timer:sleep(1000),
-
     ?debugVal(get_all_keys(<<"test_stream">>)),
     terminate_apps().
 

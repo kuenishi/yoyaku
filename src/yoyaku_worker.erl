@@ -13,7 +13,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% API
--export([start_link/1, push_task/2]).
+-export([start_link/2, push_task/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -34,8 +34,8 @@
 %% @spec start_link() -> {ok, Pid} | ignore | {error, Error}
 %% @end
 %%--------------------------------------------------------------------
-start_link(Stream) ->
-    Name = yoyaku_stream:worker_name(Stream),
+start_link(Stream, I) ->
+    Name = yoyaku_stream:worker_name(Stream, I),
     gen_server:start_link({local, Name}, ?MODULE, [Stream], []).
 
 push_task(Pid, Key) ->

@@ -10,9 +10,12 @@
 
 -export([name/1, bucket_name/1, runner_module/1,
          interval/1,
-         options/1, valid_stream/1,
+         options/1, concurrency/1,
+         valid_stream/1,
          daemon_name/1,
-         worker_name/1]).
+         worker_name/1,
+         worker_name/2,
+         worker_names/1]).
 
 -record(stream, {
           name :: atom(),
@@ -65,6 +68,15 @@ interval(#stream{interval=IntervalSec}) ->
 -spec options(stream()) -> proplists:proplist().
 options(#stream{options=Options}) -> Options.
 
+-spec concurrency(stream()) -> non_neg_integer().
+concurrency(Stream) ->
+    case proplists:get_value(concurrency, options(Stream)) of
+        undefined ->
+            5;
+        Concurrency when is_integer(Concurrency) andalso Concurrency > 0 ->
+            Concurrency
+    end.
+
 valid_stream(Stream) ->
     try
         Module = runner_module(Stream),
@@ -94,6 +106,17 @@ daemon_name(#stream{name=Name}) ->
 
 worker_name(#stream{name=Name}) ->
     concatinate_atom(yoyaku_worker, $_, Name).
+
+worker_name(#stream{name=Name}, I) ->
+    S = ["yoyaku_worker", $_,
+         atom_to_list(Name), $_,
+         integer_to_list(I)],
+    list_to_atom(lists:flatten(S)).
+
+worker_names(Stream) ->
+    Concurrency = concurrency(Stream),
+    [worker_name(Stream, I)
+     || I <- lists:seq(1, Concurrency)].
 
 concatinate_atom(Lhs, Char, Rhs) ->
     binary_to_atom(list_to_binary([atom_to_list(Lhs),
